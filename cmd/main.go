@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
@@ -34,7 +34,7 @@ func main() {
 		getData(w)
 	})
 
-	APIPort := getEnv("APIPort", "8000")
+	APIPort := getEnv("APIPort", "")
 
 	log.Printf("Starting HTTP server on :%v\n", APIPort)
 
@@ -45,33 +45,30 @@ func main() {
 }
 
 func getData(w http.ResponseWriter) {
+	RedisPort := getEnv("RedisPort", "")
+
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "localhost:" + RedisPort,
 		Password: "",
 		DB:       0,
 	})
 
-	keys, err := rdb.Keys(ctx, "*").Result()
-	if err != nil {
-		log.Fatalf("Failed to fetch keys: %v", err)
-	}
+	labels := []string{}
+	data := []int{}
 
-	sort.Strings(keys)
+	date := time.Date(2024, 3, 27, 0, 0, 0, 0, time.UTC)
 
-	labels := make([]string, 0, len(keys))
-	data := make([]int, 0, len(keys))
+	for date.Before(time.Now()) || date.Equal(time.Now()) {
+		dateAsRedisKey := date.Format("2006-01-02")
+		dateAsOutputForm := date.Format("02-01-2006")
 
-	for _, key := range keys {
-		value, err := rdb.Get(ctx, key).Result()
-		if err == redis.Nil {
-			continue
-		} else if err != nil {
-			log.Fatalf("Failed to get value for key %s: %v", key, err)
-		}
+		value, _ := rdb.Get(ctx, dateAsRedisKey).Result()
 
 		curValue, _ := getLastMonthListeners(value)
-		labels = append(labels, key)
+		labels = append(labels, dateAsOutputForm)
 		data = append(data, curValue)
+
+		date = date.Add(time.Hour * 24)
 	}
 
 	chartData := map[string]interface{}{
